@@ -12,7 +12,6 @@ local runner = {}
 
 local passed, failed = 0, 0
 local failures = {}
-local current = '?'
 
 --------------------------------------------------------------------------
 -- assertions
@@ -86,7 +85,6 @@ end
 --------------------------------------------------------------------------
 
 function runner.test(name, fn)
-  current = name
   local ok, err = pcall(fn)
 
   if ok then

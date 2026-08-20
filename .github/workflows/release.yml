@@ -1,0 +1,100 @@
+name: Release
+
+# Tag a release with the version from src/tagger/version.lua, prefixed with v:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The tag has to match version.lua, because that value is what the plugin
+# stamps into every tag file it writes.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release from, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+# bash on every runner, Windows included. The default there is pwsh, which does
+# not expand globs for external commands, so "luac -p src/tagger/*.lua" would
+# hand luac a literal asterisk.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: '5.4'
+
+      - name: Resolve the tag
+        id: tag
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # Releasing a tag that disagrees with version.lua would ship a plugin
+      # that stamps a different version into users' files than the one they
+      # downloaded. Refuse rather than guess which is right.
+      - name: Tag matches version.lua
+        run: |
+          declared=$(lua -e "package.path='src/?.lua;'..package.path; io.write((require('tagger.version')))")
+          echo "tag        = ${{ steps.tag.outputs.version }}"
+          echo "version.lua = $declared"
+          if [ "$declared" != "${{ steps.tag.outputs.version }}" ]; then
+            echo "::error::tag ${{ steps.tag.outputs.tag }} does not match version.lua ($declared)"
+            exit 1
+          fi
+
+      # A release must never be cut from something that does not pass.
+      - name: Unit tests
+        run: lua spec/run.lua
+
+      - name: Build the plugin
+        run: lua build/bundle.lua
+
+      - name: Drive the built plugin
+        run: lua spec/bundle_check.lua
+
+      - name: Record what went in
+        id: notes
+        run: |
+          {
+            echo 'NOTES<<EOF'
+            echo '`usdx-tagger.usdx` is the whole plugin. Drop it into UltraStar'
+            echo 'Deluxe'"'"'s `plugins/` directory.'
+            echo
+            echo 'This release needs an UltraStar Deluxe build that exposes the'
+            echo 'selected song and a key hook to Lua; a stock build has neither.'
+            echo 'See `docs/usdx-api-gaps.md` for what is missing and why.'
+            echo
+            echo "Tag files written by this release record \`version: ${{ steps.tag.outputs.version }}\`."
+            echo
+            echo "Built from ${GITHUB_SHA}."
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            dist/usdx-tagger.usdx \
+            --title "usdx-tagger ${{ steps.tag.outputs.tag }}" \
+            --notes "${{ steps.notes.outputs.NOTES }}" \
+            --generate-notes \
+            --verify-tag
