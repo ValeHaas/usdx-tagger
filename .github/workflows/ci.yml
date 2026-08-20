@@ -76,6 +76,13 @@ jobs:
         if: runner.os == 'Windows'
         uses: step-security/msvc-dev-cmd@v1
 
+      # The macOS runner image ships with aws/tap pre-tapped but untrusted, so
+      # every brew call in the steps below prints a tap-trust warning. Nothing
+      # here uses that tap; drop it to keep the log readable.
+      - name: Drop the untrusted aws/tap
+        if: runner.os == 'macOS'
+        run: brew untap aws/tap || true
+
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: ${{ matrix.lua }}
