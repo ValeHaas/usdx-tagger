@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# Fast gate: syntax, lint and the unit tests.
+#
+# Deliberately checks the staged content rather than the working tree, by
+# exporting the index to a temporary directory and running there. Committing a
+# subset of your changes is common, and the interesting question is whether
+# *that* passes, not whether your desk does.
+#
+# The full suite, including the built plugin, runs on pre-push.
+
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+
+hook_setup 'pre-commit'
+
+# Nothing staged that we test? Let git handle the empty-commit case itself.
+if git diff --cached --quiet 2>/dev/null; then
+  say '  nothing staged, nothing to check'
+  exit 0
+fi
+
+staged=$(mktemp -d 2>/dev/null || mktemp -d -t usdx-tagger)
+trap 'rm -rf "$staged"' EXIT
+
+step 'exporting the staged tree'
+if ! git checkout-index -a -f --prefix="$staged/" 2>/dev/null; then
+  bad
+  die 'could not export the index'
+fi
+ok
+
+if [ ! -d "$staged/src/tagger" ] || [ ! -d "$staged/spec" ]; then
+  skip 'the staged tree has no src/tagger or spec'
+  exit 0
+fi
+
+cd "$staged" || die "cannot enter $staged"
+
+# Parse everything first, so a syntax error is one clear failure rather than a
+# stack trace out of the test runner.
+run_step 'syntax' check_syntax "$LUA" \
+  src/tagger/*.lua spec/*.lua build/*.lua
+
+if luacheck=$(find_luacheck "$LUA"); then
+  step 'luacheck'
+  if output=$(run_luacheck "$LUA" "$luacheck" src spec build 2>&1); then
+    ok
+  else
+    bad
+    printf '\n%s\n' "$output" >&2
+    die 'luacheck failed'
+  fi
+else
+  step 'luacheck'
+  skip 'not installed'
+fi
+
+run_step 'unit tests' "$LUA" spec/run.lua

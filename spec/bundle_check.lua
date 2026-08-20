@@ -12,8 +12,8 @@
 local BUNDLE = 'dist/usdx-tagger.usdx'
 
 local runner = dofile('spec/runner.lua')
-local test, equal, same, is_nil, is_true, contains =
-  runner.test, runner.equal, runner.same, runner.is_nil, runner.is_true, runner.contains
+local test, equal, is_nil, is_true, contains =
+  runner.test, runner.equal, runner.is_nil, runner.is_true, runner.contains
 
 --------------------------------------------------------------------------
 -- the UltraStar Deluxe stub

@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# Only the newest run per branch matters; cancel the rest.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# bash on every runner, Windows included. The default there is pwsh, which does
+# not expand globs for external commands, so "luac -p src/tagger/*.lua" would
+# hand luac a literal asterisk.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: '5.4'
+      - uses: leafo/gh-actions-luarocks@v6
+
+      - name: Install luacheck
+        run: luarocks install luacheck
+
+      # .luacheckrc sets std = 'min', the intersection of every Lua standard
+      # library, so this also catches anything that would break on one of the
+      # versions UltraStar Deluxe might have been linked against.
+      - name: luacheck
+        run: luacheck src spec build
+
+      # A hook script that does not parse silently stops guarding anything.
+      - name: Parse the git hooks
+        run: |
+          for hook in .githooks/lib.sh .githooks/pre-commit \
+                      .githooks/pre-push .githooks/install.sh; do
+            bash -n "$hook"
+          done
+
+  test:
+    name: Test (Lua ${{ matrix.lua }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # UltraStar Deluxe links against whatever Lua the build used, and its
+        # own COMPILING.md allows 5.1 through 5.4, so every one of them has to
+        # work. Linux covers the version spread; Windows and macOS cover the
+        # platform-specific paths in the test runner and in the tag writer.
+        include:
+          - { os: ubuntu-latest,  lua: '5.1' }
+          - { os: ubuntu-latest,  lua: '5.2' }
+          - { os: ubuntu-latest,  lua: '5.3' }
+          - { os: ubuntu-latest,  lua: '5.4' }
+          - { os: macos-latest,   lua: '5.4' }
+          - { os: windows-latest, lua: '5.4' }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Building Lua on Windows needs the MSVC environment first.
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: step-security/msvc-dev-cmd@v1
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: ${{ matrix.lua }}
+
+      - name: Show interpreter
+        run: lua -v
+
+      # Every file has to parse on this version before anything else runs, so a
+      # syntax error reports as one clear failure instead of a stack trace.
+      - name: Syntax-check every file
+        run: luac -p src/tagger/*.lua spec/*.lua build/*.lua
+
+      - name: Unit tests
+        run: lua spec/run.lua
+
+      # Also asserts the generated main chunk survives an empty environment,
+      # which is how UltraStar Deluxe executes it.
+      - name: Build the plugin
+        run: lua build/bundle.lua
+
+      - name: Drive the built plugin
+        run: lua spec/bundle_check.lua
+
+      - name: Upload the built plugin
+        if: matrix.os == 'ubuntu-latest' && matrix.lua == '5.4'
+        uses: actions/upload-artifact@v6
+        with:
+          name: usdx-tagger-${{ github.sha }}
+          path: dist/usdx-tagger.usdx
+          if-no-files-found: error
+
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: '5.4'
+
+      # version.lua is the single source of truth, and the tag file records it,
+      # so a malformed value would end up written into users' song folders.
+      - name: version.lua holds a semantic version
+        run: |
+          version=$(lua -e "package.path='src/?.lua;'..package.path; io.write((require('tagger.version')))")
+          echo "version.lua = $version"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+            echo "::error::not a semantic version: $version"
+            exit 1
+          fi
+
+      - name: The plugin reports that same version
+        run: |
+          version=$(lua -e "package.path='src/?.lua;'..package.path; io.write((require('tagger.version')))")
+          reported=$(lua -e "package.path='src/?.lua;'..package.path; io.write(require('tagger.tagfile').VERSION)")
+          echo "tagfile stamps = $reported"
+          if [ "$version" != "$reported" ]; then
+            echo "::error::tagfile stamps $reported but version.lua says $version"
+            exit 1
+          fi
