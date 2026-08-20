@@ -15,6 +15,7 @@ local specs = {
   'spec.tagset_spec',
   'spec.tagfile_spec',
   'spec.keys_spec',
+  'spec.i18n_spec',
 }
 
 io.write('lua: ', _VERSION, '\n\n')

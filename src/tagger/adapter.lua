@@ -14,6 +14,9 @@
 
 local adapter = {}
 
+-- nil = not looked up yet, false = looked up and absent, string = the language
+local cached_language = nil
+
 -- filled in by init(); nil until then
 local M = {
   usdx = nil,
@@ -158,15 +161,84 @@ end
 -- misc host services
 --------------------------------------------------------------------------
 
---- The writable user directory, or nil.
+--- The writable user directory.
+-- Two values: the path in the encoding Lua's io library expects, and the same
+-- path as UTF-8 for showing to a human. On Windows those differ whenever the
+-- path leaves the active code page, and mixing them up means either a failed
+-- open or mojibake in the log.
+--
+-- A build predating that second return value gets the first one twice, which
+-- is correct there: it was UTF-8 for both purposes.
+-- @return io_path, display_path -- or nil
 function adapter.user_path()
   if M.usdx and type(M.usdx.GetUserPath) == 'function' then
-    local ok, path = pcall(M.usdx.GetUserPath)
+    local ok, path, path_utf8 = pcall(M.usdx.GetUserPath)
     if ok and type(path) == 'string' and path ~= '' then
-      return path
+      if type(path_utf8) ~= 'string' or path_utf8 == '' then
+        path_utf8 = path
+      end
+      return path, path_utf8
     end
   end
   return nil
+end
+
+--- UltraStar's own config.ini, as text, or nil plus the paths that were tried.
+-- The language setting lives in it, and there is no Lua API for game settings.
+--
+-- The first candidate is the path GetUserPath reports for io, which is the
+-- right answer on a build that distinguishes the two encodings. The %APPDATA%
+-- retry covers an older build, where GetUserPath returned UTF-8 for both
+-- purposes and so could not be opened on Windows once the path left the active
+-- code page; APPDATA comes from the same narrow C runtime io uses, so it is
+-- already in the encoding io wants. See docs/i18n.md.
+function adapter.game_config_text()
+  local join = require('tagger.tagfile').join
+  local candidates = {}
+
+  local user = adapter.user_path()
+  if user then
+    candidates[#candidates + 1] = join(user, 'config.ini')
+  end
+
+  local appdata = os.getenv('APPDATA')
+  if appdata and appdata ~= '' then
+    candidates[#candidates + 1] = join(join(appdata, 'ultrastardx'), 'config.ini')
+  end
+
+  for i = 1, #candidates do
+    local fh = io.open(candidates[i], 'rb')
+    if fh then
+      local text = fh:read('*a')
+      fh:close()
+      if text and text ~= '' then
+        return text, candidates[i]
+      end
+    end
+  end
+
+  return nil, candidates
+end
+
+--- The language UltraStar is running in, e.g. 'German', or nil.
+-- Cached, because this reads a file and it is wanted on a keypress. UltraStar
+-- only persists a language change when the options screen is left, and that
+-- always happens before song selection can be reached again, so dropping the
+-- cache on a screen change is enough to stay current.
+function adapter.game_language()
+  if cached_language == nil then
+    local i18n = require('tagger.i18n')
+    cached_language = i18n.language_from_config(adapter.game_config_text()) or false
+  end
+  if cached_language == false then
+    return nil
+  end
+  return cached_language
+end
+
+--- Drops the cached language so the next call re-reads config.ini.
+function adapter.forget_game_language()
+  cached_language = nil
 end
 
 --- Milliseconds on the same clock UltraStar uses.

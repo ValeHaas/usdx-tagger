@@ -25,6 +25,7 @@ local OUT_FILE = OUT_DIR .. '/usdx-tagger.usdx'
 
 local MODULES = {
   'version',
+  'i18n',
   'tagset',
   'tagfile',
   'keys',
