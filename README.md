@@ -21,6 +21,29 @@ During a party, nobody wants to alt-tab out of the game to note that a song has 
 lyrics or out-of-sync audio. Hit `T`, pick a tag, keep singing, sort it out tomorrow
 with `grep`.
 
+## What it looks like
+
+Press `T` on the song selection screen and the tag menu opens over it. `[x]` marks a tag the
+song already carries, so the same key both adds and removes.
+
+![The tag menu open over the song selection screen](docs/tag-editor.png)
+
+Moving through the songs shows what each one is already tagged with, so a glance tells you
+what has been dealt with and what has not.
+
+![Existing tags listed under the selected song](docs/tag-preview.png)
+
+## Language
+
+The plugin's own text is English. UltraStar Deluxe itself is translated into 29 languages,
+and the first screenshot above shows the consequence: a German game with an English plugin
+in the same frame.
+
+Following the game's language setting is possible without any further change to UltraStar
+Deluxe, and translated text renders correctly through its font stack. The investigation —
+what is readable, what should be translated, and why tag names must not be — is in
+[docs/i18n.md](docs/i18n.md). It is not implemented yet.
+
 ## Tag file
 
 Each tagged song directory gets one extra file:
