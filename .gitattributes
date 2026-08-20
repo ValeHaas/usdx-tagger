@@ -1,0 +1,14 @@
+# Normalise to LF everywhere, in the repository and in working copies.
+#
+# Two reasons beyond tidiness:
+#   - the CI workflows run with bash on the Windows runner too, and a shell
+#     script checked out with CRLF fails on the stray carriage returns
+#   - the plugin is a single Lua file read by whatever Lua UltraStar Deluxe was
+#     linked against, on three platforms
+* text=auto eol=lf
+
+# Generated plugin artifact
+*.usdx text eol=lf
+
+# Keep GitHub's language stats about the plugin, not its documentation
+docs/** linguist-documentation
