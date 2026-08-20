@@ -1,5 +1,5 @@
 --[[
-  tagfile - reads and writes .ultrastar-tags.yaml.
+  tagfile - reads and writes .usdx-user-tags.yaml.
 
   Lua ships no YAML parser, so this handles a deliberately narrow subset: the
   shape this module itself emits, which is also the shape docs/FORMAT.md
@@ -21,10 +21,18 @@
 
 local tagfile = {}
 
-tagfile.FILENAME = '.ultrastar-tags.yaml'
-tagfile.VERSION = 1
+tagfile.FILENAME = '.usdx-user-tags.yaml'
 
-local HEADER = '# UltraStar Deluxe song tags'
+-- The version stamped into files this module writes: the plugin's own
+-- semantic version, so a file records which release last touched it.
+tagfile.VERSION = require('tagger.version')
+
+-- Written at the top of a file this module creates. Kept as comment lines so
+-- anyone who opens the file knows what wrote it and why.
+local HEADER_LINES = {
+  '# UltraStar Deluxe song tags set by the user',
+  '# Created by plugin https://github.com/ValeHaas/usdx-tagger',
+}
 local ITEM_INDENT = '  '
 
 local BACKSLASH = string.char(92)
@@ -171,11 +179,16 @@ function tagfile.load(dir)
             end
 
           elseif current_key == 'version' then
-            local n = tonumber(value)
-            if value ~= '' and not n then
-              return refuse(i, 'version must be a number')
+            if value ~= '' then
+              -- accept anything that looks like a version, including the bare
+              -- "1" that early files carry. an unfamiliar value is kept as-is
+              -- rather than rejected: refusing to read a file written by a
+              -- newer plugin would lose the user's tags.
+              if not value:match('^[%w][%w%.%+%-]*$') then
+                return refuse(i, 'version must be a version string')
+              end
+              st.version = value
             end
-            st.version = n
           end
 
         elseif line:match('^%s+') then
@@ -187,7 +200,8 @@ function tagfile.load(dir)
     end
   end
 
-  -- an absent version means version 1
+  -- an absent version is treated as this plugin's version, which is also what
+  -- a rewrite will stamp
   st.version = st.version or tagfile.VERSION
 
   return st
@@ -227,8 +241,10 @@ local function render(st, tags)
 
   if not st.present or #st.lines == 0 then
     -- a fresh file
-    out[#out + 1] = HEADER
-    out[#out + 1] = 'version: ' .. tostring(st.version or tagfile.VERSION)
+    for i = 1, #HEADER_LINES do
+      out[#out + 1] = HEADER_LINES[i]
+    end
+    out[#out + 1] = 'version: ' .. tostring(tagfile.VERSION)
     for i = 1, #block do out[#out + 1] = block[i] end
 
   elseif st.tags_start then

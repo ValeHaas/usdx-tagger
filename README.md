@@ -3,7 +3,7 @@
 An [UltraStar Deluxe](https://usdx.eu/) plugin for tagging songs from inside the game.
 
 Press a key while a song is selected, previewing, or playing, and the plugin writes a
-`.ultrastar-tags.yaml` file into that song's directory. The tags live next to the song,
+`.usdx-user-tags.yaml` file into that song's directory. The tags live next to the song,
 so they can be found and processed with ordinary filesystem tools — no database, no
 network, no separate service.
 
@@ -16,7 +16,8 @@ then reviewing them later.
 ## Why
 
 During a party, nobody wants to alt-tab out of the game to note that a song has broken
-lyrics or out-of-sync audio. Hit `G`, keep singing, sort it out tomorrow with `grep`.
+lyrics or out-of-sync audio. Hit `T`, pick a tag, keep singing, sort it out tomorrow
+with `grep`.
 
 ## Tag file
 
@@ -27,11 +28,13 @@ Songs/
 └── Artist - Song Title/
     ├── Artist - Song Title.txt
     ├── Artist - Song Title.mp3
-    └── .ultrastar-tags.yaml
+    └── .usdx-user-tags.yaml
 ```
 
 ```yaml
-version: 1
+# UltraStar Deluxe song tags set by the user
+# Created by plugin https://github.com/ValeHaas/usdx-tagger
+version: 0.1.0
 tags:
   - bad-audio
   - review
@@ -42,7 +45,9 @@ minimal accepted file — in [docs/initial_idea.md](docs/initial_idea.md#4-yaml-
 
 Notes on the format:
 
-- `version` may be omitted; it then defaults to `1`.
+- `version` is the [semantic version](https://semver.org) of the plugin that last wrote
+  the file. It may be omitted, and an unfamiliar value is read rather than rejected, so a
+  file written by a newer plugin never costs you your tags.
 - Tag names are arbitrary. They are trimmed, compared case-insensitively, and stored
   lowercase, so `Bad-Audio`, ` bad-audio `, and `bad-audio` are the same tag.
 - Tag order is stable; new tags are appended.
@@ -54,35 +59,44 @@ Suggested starting tags: `bad`, `review`, `bad-audio`, `bad-video`, `bad-lyrics`
 
 ## Default key bindings
 
-| Key       | Action                       |
-|-----------|------------------------------|
-| `G`       | Add the quick tag (`bad`)    |
-| `Shift+G` | Remove the quick tag         |
-| `T`       | Open the tag menu            |
-| `Shift+T` | Remove a tag                 |
-| `Ctrl+T`  | Show tags for current song   |
+| Key      | Action                                  |
+|----------|-----------------------------------------|
+| `T`      | Open the tag menu                       |
+| `Ctrl+T` | Show the current song's tags            |
 
-All shortcuts and the quick tag are configurable, so they can be moved out of the way of
-UltraStar Deluxe's own controls.
+In the menu: up/down to move, `Enter` to toggle the highlighted tag, `Esc` to close. A
+tag the song already carries is marked `[x]`, and toggling it removes it again, so one
+key covers both adding and removing. The menu stays open after a toggle so several tags
+can be set in one visit.
+
+Any key the plugin has no binding for is passed straight through to UltraStar Deluxe, so
+its own controls keep working.
 
 ## Configuration
 
-Configuration lives in the platform-appropriate user config directory — never in the song
-library:
+Configuration lives in the writable user directory that UltraStar Deluxe reports — never
+in the song library. On Windows that is `%APPDATA%\ultrastardx\usdx-tagger.ini`, or the
+executable's directory for a portable install.
 
 ```ini
 enabled=true
 quick_tag=bad
 tag_menu_key=T
-quick_add_key=G
-quick_remove_key=Shift+G
+show_tags_key=Ctrl+T
 show_notifications=true
 show_existing_tags=true
 delete_empty_tag_file=true
-hide_marked_songs=false
+notification_ms=2500
 ```
 
-Missing or malformed configuration falls back to defaults rather than failing to load.
+`quick_tag` is the tag placed first in the menu, so the most common choice is one
+keystroke away.
+
+Key bindings accept modifiers: `T`, `Shift+T`, `Ctrl+T`, `Alt+F5`, and the named keys
+`Space`, `Escape`, `Return`, `Tab`, the arrows, and `F1`-`F12`.
+
+A missing file, a missing key, or a malformed value each fall back to the default and are
+noted in UltraStar Deluxe's log rather than failing to load.
 
 ## Working with tags outside the game
 
@@ -92,19 +106,19 @@ plugin — or UltraStar Deluxe — to use the data.
 Find every tagged song:
 
 ```bash
-find Songs -name '.ultrastar-tags.yaml'
+find Songs -name '.usdx-user-tags.yaml'
 ```
 
 List the directories of everything tagged `bad`:
 
 ```bash
-grep -rl --include='.ultrastar-tags.yaml' -e '- bad$' Songs | xargs -n1 dirname
+grep -rl --include='.usdx-user-tags.yaml' -e '- bad$' Songs | xargs -n1 dirname
 ```
 
 Move songs marked `review` into a quarantine folder:
 
 ```bash
-grep -rl --include='.ultrastar-tags.yaml' -e '- review$' Songs \
+grep -rl --include='.usdx-user-tags.yaml' -e '- review$' Songs \
   | xargs -n1 dirname \
   | xargs -I{} mv {} Quarantine/
 ```
@@ -112,7 +126,7 @@ grep -rl --include='.ultrastar-tags.yaml' -e '- review$' Songs \
 PowerShell equivalent:
 
 ```powershell
-Get-ChildItem -Recurse -Force -Filter '.ultrastar-tags.yaml' |
+Get-ChildItem -Recurse -Force -Filter '.usdx-user-tags.yaml' |
   Where-Object { (Get-Content $_.FullName) -match '^\s*-\s*bad\s*$' } |
   ForEach-Object { $_.Directory.FullName }
 ```
@@ -123,15 +137,42 @@ UltraStar-specific and platform-specific code is isolated behind adapters, so th
 logic can be tested — and reused by other tools — without the game running.
 
 ```text
-UltraStarTagsPlugin
-├── UltraStarAdapter    -- current song, actions, notifications
-├── TagService          -- add / remove / list / has / clear
-├── TagFileRepository   -- load / save / exists / deleteIfEmpty
-├── TagValidator
-└── PluginConfig
+src/tagger/
+├── version.lua   -- the semantic version, single source of truth
+├── tagset.lua    -- tag naming and set operations   (TagService + TagValidator)
+├── tagfile.lua   -- reads and writes the tag file   (TagFileRepository)
+├── keys.lua      -- key bindings and matching
+├── config.lua    -- settings                         (PluginConfig)
+├── notify.lua    -- on-screen messages
+├── adapter.lua   -- the only module touching Usdx.*  (UltraStarAdapter)
+└── init.lua      -- configuration, key handling, tag menu
 ```
 
-`TagService` and `TagFileRepository` have no dependency on UltraStar Deluxe.
+Only `adapter.lua` knows UltraStar Deluxe exists. Everything else is plain Lua over plain
+strings and files, which is what lets the test suite run the whole tag engine — and drive
+the built plugin end to end — with the game absent.
+
+`notify.lua` takes its clock and its drawing function as parameters rather than reaching
+for them, for the same reason.
+
+## Development
+
+Requires a Lua interpreter; nothing else, and no luarocks.
+
+```bash
+lua spec/run.lua           # unit tests for the engine, no game needed
+lua build/bundle.lua       # build dist/usdx-tagger.usdx
+lua spec/bundle_check.lua  # drive the built plugin with UltraStar stubbed out
+```
+
+The plugin ships as a single `.usdx` file because UltraStar resolves only
+`require('Usdx.*')` and its plugin directory is read-only in a release build, so
+`build/bundle.lua` inlines the modules. It also runs the generated main chunk in a bare
+environment as a build step — UltraStar executes a plugin's main chunk *before* opening
+the standard library, and that check catches the resulting breakage at build time instead
+of in the game.
+
+`dist/` is not committed; build it when you need it.
 
 ## Guarantees
 
@@ -143,7 +184,7 @@ The plugin owns exactly one file per song directory and nothing else. It will ne
 - execute shell commands,
 - require a database, network access, or administrator privileges.
 
-Writes to `.ultrastar-tags.yaml` are atomic (temp file in the same directory, then
+Writes to `.usdx-user-tags.yaml` are atomic (temp file in the same directory, then
 replace), YAML is parsed in safe mode with no object deserialization, and unknown fields
 are preserved where possible. Errors — no current song, read-only directory, invalid
 YAML, permission denied — surface as a notification and a log entry, never as a crash.
@@ -154,14 +195,31 @@ rather than reconstructed from artist and title.
 
 ## Platform support
 
-Windows, Linux, and macOS, as far as the UltraStar Deluxe plugin API allows. Unicode
-paths, spaces and punctuation, nested song directories, multiple song libraries, and
-writable network mounts are all supported.
+Windows, Linux, and macOS, as far as the UltraStar Deluxe plugin API allows. Spaces and
+punctuation, nested song directories, multiple song libraries, and writable network
+mounts are all supported.
+
+Unicode paths work, with one caveat on Windows: Lua's `io` library reaches the filesystem
+through the narrow C runtime, which reads paths in the active ANSI code page. A song
+folder whose name needs characters that code page cannot represent is not openable from a
+plugin at all. Names within the code page — `Björk`, `Motörhead`, `Sigur Rós` — are fine.
+The failure is reported, never silently ignored.
 
 ## Installation
 
-Not yet available — the plugin has no releases. Installation instructions will follow the
-first working version.
+The plugin needs an UltraStar Deluxe build that exposes the selected song and a key hook
+to Lua. A stock build has neither, so a patched game is required for now; what is missing
+and why is written up in [docs/usdx-api-gaps.md](docs/usdx-api-gaps.md).
+
+With such a build, drop `dist/usdx-tagger.usdx` into its `plugins/` directory. A release
+build on Windows keeps that directory under `Program Files`, which needs administrator
+rights; a build from source has a writable `game/plugins/` instead.
+
+To confirm it loaded, look for `usdx-tagger` in `Error.log`:
+
+```text
+INFO:   usdx-tagger: ready, tag menu on "T"
+```
 
 ## Contributing
 

@@ -1,4 +1,4 @@
--- reading and writing .ultrastar-tags.yaml
+-- reading and writing .usdx-user-tags.yaml
 
 return function(t)
   local tagfile = require('tagger.tagfile')
@@ -38,7 +38,7 @@ return function(t)
     equal(st.present, false, 'present')
     equal(st.supported, true, 'supported')
     same(st.tags, {})
-    equal(st.version, 1, 'version defaults to 1')
+    equal(st.version, tagfile.VERSION, 'version defaults to the plugin version')
     t.rmdir(dir)
   end)
 
@@ -49,8 +49,9 @@ return function(t)
 
     local text = t.read_file(tagfile.path_for(dir))
     equal(text,
-      '# UltraStar Deluxe song tags' .. LF ..
-      'version: 1' .. LF ..
+      '# UltraStar Deluxe song tags set by the user' .. LF ..
+      '# Created by plugin https://github.com/ValeHaas/usdx-tagger' .. LF ..
+      'version: ' .. tagfile.VERSION .. LF ..
       'tags:' .. LF ..
       '  - bad' .. LF)
     t.rmdir(dir)
@@ -59,7 +60,7 @@ return function(t)
   test('the created file lands in the song directory', function()
     local dir = songdir()
     edit(dir, function(tags) tagset.add(tags, 'bad') end)
-    is_true(t.file_exists(dir .. '/.ultrastar-tags.yaml'), 'file in song dir')
+    is_true(t.file_exists(dir .. '/.usdx-user-tags.yaml'), 'file in song dir')
     t.rmdir(dir)
   end)
 
@@ -154,15 +155,59 @@ return function(t)
   -- accepted input shapes (spec 4.2, 4.4)
   ----------------------------------------------------------------
 
-  test('a minimal file without version is accepted and assumed version 1', function()
+  test('the stamped version is the plugin version, in semver form', function()
+    is_true(tagfile.VERSION:match('^%d+%.%d+%.%d+') ~= nil,
+      'VERSION is semver, got ' .. tostring(tagfile.VERSION))
+  end)
+
+  test('a minimal file without version is accepted', function()
     local dir = songdir()
     t.write_file(tagfile.path_for(dir), 'tags:' .. LF .. '  - bad' .. LF)
 
     local st = tagfile.load(dir)
     equal(st.supported, true, 'supported')
-    equal(st.version, 1, 'version')
+    equal(st.version, tagfile.VERSION, 'assumed to be ours')
     same(st.tags, { 'bad' })
     t.rmdir(dir)
+  end)
+
+  test('the bare version 1 of an early file is still readable', function()
+    local dir = songdir()
+    t.write_file(tagfile.path_for(dir),
+      'version: 1' .. LF .. 'tags:' .. LF .. '  - bad' .. LF)
+
+    local st = tagfile.load(dir)
+    equal(st.supported, true, 'supported')
+    equal(st.version, '1', 'kept as written')
+    same(st.tags, { 'bad' })
+    t.rmdir(dir)
+  end)
+
+  test('a version from a newer plugin is read, not rejected', function()
+    -- refusing would lose the user's tags for no good reason
+    local dir = songdir()
+    t.write_file(tagfile.path_for(dir),
+      'version: 99.1.0' .. LF .. 'tags:' .. LF .. '  - bad' .. LF)
+
+    local st = tagfile.load(dir)
+    equal(st.supported, true, 'supported')
+    equal(st.version, '99.1.0', 'kept as written')
+    same(st.tags, { 'bad' })
+    t.rmdir(dir)
+  end)
+
+  test('a rewrite stamps the current plugin version', function()
+    local dir = songdir()
+    t.write_file(tagfile.path_for(dir), 'tags:' .. LF .. '  - bad' .. LF)
+
+    -- no version key, so the block is appended rather than spliced; write a
+    -- fresh file instead to see the stamp
+    t.rmdir(dir)
+    local fresh = songdir()
+    edit(fresh, function(tags) tagset.add(tags, 'bad') end)
+    contains(t.read_file(tagfile.path_for(fresh)),
+      'version: ' .. tagfile.VERSION, 'current version stamped')
+    t.rmdir(fresh)
   end)
 
   test('unindented sequence entries are accepted', function()
@@ -240,8 +285,8 @@ return function(t)
     'tags:' .. LF .. '  - bad' .. LF .. 'tags:' .. LF .. '  - review' .. LF,
     'duplicate')
 
-  refuses('a non-numeric version is refused',
-    'version: one' .. LF .. 'tags:' .. LF .. '  - bad' .. LF, 'version')
+  refuses('a version that is not a version string is refused',
+    'version: {a: b}' .. LF .. 'tags:' .. LF .. '  - bad' .. LF, 'version')
 
   refuses('a line that is neither key, item nor comment is refused',
     'this is not yaml at all' .. LF, 'unrecognised')
