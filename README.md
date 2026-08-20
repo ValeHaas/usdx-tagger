@@ -168,6 +168,37 @@ lua spec/bundle_check.lua  # drive the built plugin with UltraStar stubbed out
 luacheck src spec build    # lint, if you have it
 ```
 
+### Git hooks
+
+The same checks CI runs are available locally:
+
+```bash
+bash .githooks/install.sh
+```
+
+That sets `core.hooksPath`, so the hooks stay versioned and an update arrives with a
+normal `git pull` — nothing is copied into `.git/hooks`.
+
+| Hook | Runs |
+|------|------|
+| `pre-commit` | syntax, lint, unit tests |
+| `pre-push` | the above, plus the plugin build, the built plugin, and the version checks |
+
+`pre-commit` deliberately tests the **staged** tree, not your working directory: it
+exports the index to a temporary directory and runs there. Committing a subset of your
+changes is common, and the question worth answering is whether *that* passes.
+
+`pre-push` additionally checks, when you push a `v*` tag, that the tag matches
+`version.lua` — the release workflow would refuse it otherwise, and finding out before
+the push is cheaper.
+
+Both hooks find a Lua interpreter themselves, including one installed somewhere not on
+`PATH`. Point `USDX_TAGGER_LUA` at a specific one if you need to. `luacheck` is optional
+and is skipped with a note when it is absent.
+
+Skip once with `git commit --no-verify`, or set `USDX_TAGGER_SKIP_HOOKS=1` to disable
+both.
+
 The plugin ships as a single `.usdx` file because UltraStar resolves only
 `require('Usdx.*')` and its plugin directory is read-only in a release build, so
 `build/bundle.lua` inlines the modules. It also runs the generated main chunk in a bare

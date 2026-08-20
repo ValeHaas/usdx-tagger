@@ -42,6 +42,14 @@ jobs:
       - name: luacheck
         run: luacheck src spec build
 
+      # A hook script that does not parse silently stops guarding anything.
+      - name: Parse the git hooks
+        run: |
+          for hook in .githooks/lib.sh .githooks/pre-commit \
+                      .githooks/pre-push .githooks/install.sh; do
+            bash -n "$hook"
+          done
+
   test:
     name: Test (Lua ${{ matrix.lua }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}

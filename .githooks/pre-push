@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# Full gate, matching what CI runs: syntax, lint, unit tests, the bundle build
+# (which includes the bare-environment check), the built plugin driven through
+# a stubbed UltraStar, and the version consistency checks.
+#
+# Runs against the working tree. If the tree is dirty that is not quite what is
+# being pushed, so it says so rather than pretending otherwise.
+
+# shellcheck source=lib.sh
+. "$(dirname "$0")/lib.sh"
+
+hook_setup 'pre-push'
+
+if ! git diff --quiet HEAD 2>/dev/null; then
+  say "  ${C_YELLOW}note${C_OFF}: the working tree is dirty, so this tests your tree, not the commits"
+fi
+
+# ---------------------------------------------------------------- checks
+
+run_step 'syntax' check_syntax "$LUA" \
+  src/tagger/*.lua spec/*.lua build/*.lua
+
+if luacheck=$(find_luacheck "$LUA"); then
+  step 'luacheck'
+  if output=$(run_luacheck "$LUA" "$luacheck" src spec build 2>&1); then
+    ok
+  else
+    bad
+    printf '\n%s\n' "$output" >&2
+    die 'luacheck failed'
+  fi
+else
+  step 'luacheck'
+  skip 'not installed'
+fi
+
+run_step 'unit tests' "$LUA" spec/run.lua
+
+# Also asserts the generated main chunk survives an empty environment, which is
+# how UltraStar Deluxe executes a plugin's file body.
+run_step 'plugin build' "$LUA" build/bundle.lua
+
+run_step 'built plugin' "$LUA" spec/bundle_check.lua
+
+# The version is written into every tag file the plugin creates, so a bad value
+# reaches users' song folders. Same checks CI makes.
+step 'version'
+version=$("$LUA" -e "package.path='src/?.lua;'..package.path; io.write((require('tagger.version')))" 2>&1)
+stamped=$("$LUA" -e "package.path='src/?.lua;'..package.path; io.write(require('tagger.tagfile').VERSION)" 2>&1)
+
+if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+  bad
+  die "version.lua is not a semantic version: $version"
+fi
+
+if [ "$version" != "$stamped" ]; then
+  bad
+  die "tag files would be stamped $stamped but version.lua says $version"
+fi
+ok
+
+# ---------------------------------------------------------------- tags
+
+# Pushing a v* tag triggers the release workflow, which refuses to publish when
+# the tag and version.lua disagree. Catch that here instead of after the push.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*)
+      tag=${remote_ref#refs/tags/}
+      step "tag $tag matches version.lua"
+      if [ "${tag#v}" != "$version" ]; then
+        bad
+        die "tag $tag does not match version.lua ($version); the release would be refused"
+      fi
+      ok
+      ;;
+  esac
+done
