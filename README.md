@@ -35,14 +35,35 @@ what has been dealt with and what has not.
 
 ## Language
 
-The plugin's own text is English. UltraStar Deluxe itself is translated into 29 languages,
-and the first screenshot above shows the consequence: a German game with an English plugin
-in the same frame.
+The plugin follows whatever language UltraStar Deluxe is set to. Play in German and the menu,
+the confirmations and the tag names are German. The screenshot above predates this and shows
+what it used to look like: a German game with an English plugin in the same frame.
 
-Following the game's language setting is possible without any further change to UltraStar
-Deluxe, and translated text renders correctly through its font stack. The investigation —
-what is readable, what should be translated, and why tag names must not be — is in
-[docs/i18n.md](docs/i18n.md). It is not implemented yet.
+Translations exist for German, French, Spanish, Italian, Dutch, Portuguese, Polish, Russian
+and Swedish. Any other language falls back to English. They have **not** been reviewed by
+native speakers, so corrections are welcome — a language lives in one table in
+[src/tagger/i18n.lua](src/tagger/i18n.lua), and adding a new one is a data-only change.
+
+**The tag written to the file is never translated.** Only its display name is:
+
+```text
+Tags  (auf/ab, Enter schaltet um, Esc schließt)
+> [x] schlecht (bad)
+  [ ] prüfen (review)
+  [ ] Ton fehlerhaft (bad-audio)
+```
+
+The file still says `- bad`, so `grep` keeps working across machines and across languages,
+which is the entire reason the file exists. The canonical name stays visible in the menu for
+the same reason: a player who only ever saw `schlecht` would have no idea what to search for
+later.
+
+UltraStar's log also stays English, since log lines end up in bug reports read by people who
+do not share the player's language.
+
+Set `language=` in the config to pin the plugin to one language regardless of the game, or
+leave it at `auto`. How the game's setting is discovered, and what else turned out to be
+reachable from a plugin, is written up in [docs/i18n.md](docs/i18n.md).
 
 ## Tag file
 
@@ -112,10 +133,15 @@ show_notifications=true
 show_existing_tags=true
 delete_empty_tag_file=true
 notification_ms=2500
+language=auto
 ```
 
 `quick_tag` is the tag placed first in the menu, so the most common choice is one
 keystroke away.
+
+`language` is `auto` — follow UltraStar — or one of `English`, `German`, `French`, `Spanish`,
+`Italian`, `Dutch`, `Portuguese`, `Polish`, `Russian`, `Swedish`. A name with no translation
+is reported in the log instead of silently showing English.
 
 Key bindings accept modifiers: `T`, `Shift+T`, `Ctrl+T`, `Alt+F5`, and the named keys
 `Space`, `Escape`, `Return`, `Tab`, the arrows, and `F1`-`F12`.
@@ -164,6 +190,7 @@ logic can be tested — and reused by other tools — without the game running.
 ```text
 src/tagger/
 ├── version.lua   -- the semantic version, single source of truth
+├── i18n.lua      -- message catalogues and language resolution
 ├── tagset.lua    -- tag naming and set operations   (TagService + TagValidator)
 ├── tagfile.lua   -- reads and writes the tag file   (TagFileRepository)
 ├── keys.lua      -- key bindings and matching

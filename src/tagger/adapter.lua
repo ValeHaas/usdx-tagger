@@ -14,6 +14,9 @@
 
 local adapter = {}
 
+-- nil = not looked up yet, false = looked up and absent, string = the language
+local cached_language = nil
+
 -- filled in by init(); nil until then
 local M = {
   usdx = nil,
@@ -167,6 +170,65 @@ function adapter.user_path()
     end
   end
   return nil
+end
+
+--- UltraStar's own config.ini, as text, or nil plus the paths that were tried.
+-- The language setting lives in it, and there is no Lua API for game settings.
+--
+-- Windows has a wrinkle worth the second candidate. GetUserPath() hands back
+-- UTF-8 (ULuaUsdx.pas pushes ToUTF8 directly instead of going through
+-- Lua_PushIOPath), while Lua's io reaches the filesystem through the narrow C
+-- runtime and wants the active code page. For an ASCII path the two agree; for
+-- a profile name outside the code page they do not, and the open fails. APPDATA
+-- comes from that same narrow runtime, so it is already in the encoding io
+-- wants. See docs/i18n.md.
+function adapter.game_config_text()
+  local join = require('tagger.tagfile').join
+  local candidates = {}
+
+  local user = adapter.user_path()
+  if user then
+    candidates[#candidates + 1] = join(user, 'config.ini')
+  end
+
+  local appdata = os.getenv('APPDATA')
+  if appdata and appdata ~= '' then
+    candidates[#candidates + 1] = join(join(appdata, 'ultrastardx'), 'config.ini')
+  end
+
+  for i = 1, #candidates do
+    local fh = io.open(candidates[i], 'rb')
+    if fh then
+      local text = fh:read('*a')
+      fh:close()
+      if text and text ~= '' then
+        return text, candidates[i]
+      end
+    end
+  end
+
+  return nil, candidates
+end
+
+--- The language UltraStar is running in, e.g. 'German', or nil.
+-- Cached, because this reads a file and it is wanted on a keypress. UltraStar
+-- only persists a language change when the options screen is left, and that
+-- always happens before song selection can be reached again, so dropping the
+-- cache on a screen change is enough to stay current.
+function adapter.game_language()
+  if cached_language == nil then
+    local i18n = require('tagger.i18n')
+    cached_language = i18n.language_from_config(adapter.game_config_text()) or false
+  end
+  if cached_language == false then
+    return nil
+  end
+  return cached_language
+end
+
+--- Drops the cached language so the next call re-reads config.ini.
+function adapter.forget_game_language()
+  cached_language = nil
 end
 
 --- Milliseconds on the same clock UltraStar uses.

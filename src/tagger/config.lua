@@ -28,6 +28,7 @@ local SETTINGS = {
   { key = 'show_existing_tags',    default = true,     kind = 'boolean' },
   { key = 'delete_empty_tag_file', default = true,     kind = 'boolean' },
   { key = 'notification_ms',       default = 2500,     kind = 'number' },
+  { key = 'language',              default = 'auto',   kind = 'language' },
 }
 
 config.SETTINGS = SETTINGS
@@ -101,6 +102,21 @@ local function coerce(setting, raw)
     return raw
   end
 
+  if setting.kind == 'language' then
+    if raw:lower() == 'auto' then
+      return 'auto'
+    end
+    local i18n = require('tagger.i18n')
+    local known = i18n.known(raw)
+    if not known then
+      -- pinning to a language with no catalogue would silently show English,
+      -- which looks like the setting was ignored. Say so instead.
+      return nil, string.format('%s: no translation for %q, known: %s',
+        setting.key, raw, table.concat(i18n.languages(), ', '))
+    end
+    return known
+  end
+
   if setting.kind == 'tag' then
     local tagset = require('tagger.tagset')
     local norm, err = tagset.normalize(raw)
@@ -167,6 +183,8 @@ local function serialize(cfg, unknown)
   local out = {
     '# usdx-tagger settings',
     '# key bindings accept modifiers, for example: G, Shift+G, Ctrl+T',
+    '# language is auto (follow UltraStar) or one of: '
+      .. table.concat(require('tagger.i18n').languages(), ', '),
     '',
   }
 

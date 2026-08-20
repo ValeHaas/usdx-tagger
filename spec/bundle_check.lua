@@ -102,6 +102,8 @@ end
 -- driving the plugin
 --------------------------------------------------------------------------
 
+local LF = string.char(10)
+
 local KMOD_LSHIFT = 0x0001
 local KMOD_LCTRL = 0x0040
 
@@ -157,6 +159,23 @@ local function tagfile_path(dir)
   return dir .. '/.usdx-user-tags.yaml'
 end
 
+--- Writes an UltraStar config.ini into the stub user path.
+-- Pinned deliberately: without a config there, the plugin would fall back to
+-- %APPDATA%/ultrastardx/config.ini and pick up whatever language the developer
+-- running the tests happens to play in, so the assertions below would depend on
+-- the machine.
+local function set_game_language(name)
+  runner.write_file(host.user_path .. '/config.ini',
+    '[Game]' .. LF .. 'Players=1' .. LF .. 'Language=' .. name .. LF)
+end
+
+--- Pushes the clock past the language re-check interval and fires the hook that
+-- performs it, which is how a language change reaches the plugin mid-session.
+local function refresh_language()
+  host.now = host.now + 10000
+  song_selected()
+end
+
 local function set_song(dir)
   host.song = {
     Path = dir,
@@ -173,6 +192,7 @@ end
 --------------------------------------------------------------------------
 
 host.user_path = runner.tmpdir('userpath')
+set_game_language('English')
 
 local chunk, load_err = loadfile(BUNDLE)
 if not chunk then
@@ -423,7 +443,7 @@ test('with no current song nothing crashes and a warning shows', function()
   settle()
 
   is_true(press(KEY_T), 'key still consumed')
-  contains(screen(), 'No current song', 'warning shown')
+  contains(screen(), 'No song is selected', 'warning shown')
 end)
 
 test('an unsupported tag file is refused, not overwritten', function()
@@ -449,7 +469,7 @@ test('a song directory that vanished reports an error', function()
   settle()
 
   menu_toggle(0)
-  contains(screen(), 'Cannot update tags', 'error shown')
+  contains(screen(), 'Cannot save tags', 'error shown')
 end)
 
 test('a Unicode song directory works end to end', function()
@@ -459,6 +479,145 @@ test('a Unicode song directory works end to end', function()
 
   menu_toggle(0)
   contains(runner.read_file(tagfile_path(dir)) or '', '- bad', 'tag written')
+
+  runner.rmdir(dir)
+end)
+
+--------------------------------------------------------------------------
+-- following UltraStar's language
+--------------------------------------------------------------------------
+
+test('the plugin reads the language out of UltraStar config.ini', function()
+  local dir = runner.tmpdir('langde')
+  set_song(dir)
+  settle()
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  menu_toggle(0)
+  contains(screen(), 'hinzugef' .. string.char(195, 188) .. 'gt',
+    'the confirmation is German')
+
+  runner.rmdir(dir)
+end)
+
+test('the log stays English while the screen is translated', function()
+  local dir = runner.tmpdir('langlog')
+  set_song(dir)
+  settle()
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  local before = #host.log
+  menu_toggle(0)
+
+  local logged = {}
+  for i = before + 1, #host.log do
+    logged[#logged + 1] = host.log[i]
+  end
+  local text = table.concat(logged, ' | ')
+  contains(text, 'Added tag', 'English in the log')
+  contains(text, '"bad"', 'and the canonical tag name, not the translation')
+  is_true(not text:find('schlecht', 1, true), 'no German in the log')
+
+  runner.rmdir(dir)
+end)
+
+test('the tag menu header is translated too', function()
+  local dir = runner.tmpdir('langmenu')
+  set_song(dir)
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  press(KEY_T)
+  contains(screen(), 'schaltet um', 'German menu header')
+  press(KEY_ESC)
+
+  runner.rmdir(dir)
+end)
+
+test('the menu shows translated tag names with the canonical name kept', function()
+  local dir = runner.tmpdir('langlabels')
+  set_song(dir)
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  press(KEY_T)
+  local lines = screen()
+  contains(lines, 'schlecht (bad)', 'translated label plus canonical name')
+  contains(lines, 'Duplikat (duplicate)', 'and for the other entries')
+  press(KEY_ESC)
+
+  runner.rmdir(dir)
+end)
+
+test('the confirmation names the tag in the local language', function()
+  local dir = runner.tmpdir('langconfirm')
+  set_song(dir)
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  menu_toggle(0)
+  contains(screen(), 'schlecht', 'translated tag on screen')
+
+  runner.rmdir(dir)
+end)
+
+test('tag names are not translated, whatever the language', function()
+  -- the whole point: the file has to stay greppable across machines
+  local dir = runner.tmpdir('langtags')
+  set_song(dir)
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  menu_toggle(0)
+  local text = runner.read_file(tagfile_path(dir))
+  contains(text, '- bad', 'the tag is still "bad"')
+  contains(text, 'tags:', 'the key is still "tags"')
+
+  runner.rmdir(dir)
+end)
+
+test('a language with no catalogue falls back to English', function()
+  local dir = runner.tmpdir('langnone')
+  set_song(dir)
+
+  set_game_language('Icelandic')
+  refresh_language()
+  settle()
+
+  menu_toggle(0)
+  contains(screen(), 'Added tag', 'English confirmation')
+
+  runner.rmdir(dir)
+end)
+
+test('going back to English takes effect without a restart', function()
+  local dir = runner.tmpdir('langback')
+  set_song(dir)
+
+  set_game_language('German')
+  refresh_language()
+  settle()
+
+  set_game_language('English')
+  refresh_language()
+  settle()
+
+  menu_toggle(0)
+  contains(screen(), 'Added tag', 'English again')
 
   runner.rmdir(dir)
 end)
@@ -475,7 +634,8 @@ test('a user-visible failure is also recorded in the log', function()
   press(KEY_T)
 
   is_true(#host.log > before, 'something was logged')
-  contains(table.concat(host.log, ' | '), 'No current song', 'the reason is in the log')
+  contains(table.concat(host.log, ' | '), 'No song is selected',
+    'the reason is in the log')
 end)
 
 runner.rmdir(host.user_path)

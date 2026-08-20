@@ -10,6 +10,7 @@
 
 local adapter = require('tagger.adapter')
 local config  = require('tagger.config')
+local i18n    = require('tagger.i18n')
 local keys    = require('tagger.keys')
 local notify  = require('tagger.notify')
 local tagfile = require('tagger.tagfile')
@@ -22,9 +23,18 @@ tagger.VERSION = require('tagger.version')
 --- Reports a problem to the user and to the plugin log. Every user-visible
 -- failure goes through here, so nothing is only ever shown on screen and then
 -- lost (the requirements ask for diagnostics in a log).
-local function problem(message, detail)
-  notify.warn(message)
-  adapter.log_warn(detail and (message .. ' (' .. tostring(detail) .. ')') or message)
+--
+-- The screen gets the user's language; the log always gets English, because
+-- log lines end up in bug reports read by people who do not share it.
+local function problem(key, vars, detail)
+  notify.warn(i18n.t(key, vars))
+  local logged = i18n.en(key, vars)
+  adapter.log_warn(detail and (logged .. ' (' .. tostring(detail) .. ')') or logged)
+end
+
+--- A message to show later: a catalogue key plus its placeholder values.
+local function msg(key, vars)
+  return { key = key, vars = vars }
 end
 
 local state = {
@@ -33,7 +43,14 @@ local state = {
   unknown_cfg = nil,
   bindings = {},
   menu = nil, -- {tags = {...}, index = n} while the tag menu is open
+  game_language = nil,
+  language_checked_at = nil,
 }
+
+-- How often the game's language setting is re-read. It only changes when the
+-- user leaves the options screen, so this is about not reading a file on every
+-- step of a roulette spin, not about catching a fast-moving value.
+local LANGUAGE_RECHECK_MS = 3000
 
 tagger._state = state
 
@@ -64,20 +81,20 @@ end
 local function update_current(change)
   local song = adapter.current_song()
   if not song then
-    problem('No current song is available.')
+    problem('no_song')
     return
   end
 
   local tags, st = read_tags(song.path)
   if not tags then
-    problem('Cannot read ' .. tagfile.FILENAME .. ': invalid file.', st.err)
+    problem('read_failed', { file = tagfile.FILENAME }, st.err)
     return
   end
 
-  local message, err = change(tags, song)
+  local message, failure = change(tags, song)
   if not message then
-    if err then
-      problem(err)
+    if failure then
+      problem(failure.key, failure.vars)
     end
     return
   end
@@ -87,12 +104,12 @@ local function update_current(change)
   })
 
   if not ok then
-    problem('Cannot update tags: ' .. tostring(save_err), st.path)
+    problem('save_failed', { error = tostring(save_err) }, st.path)
     return
   end
 
-  notify.info(message)
-  adapter.log_info(message)
+  notify.info(i18n.t(message.key, message.vars))
+  adapter.log_info(i18n.en(message.key, message.vars))
 end
 
 --- Adds one tag to the current song.
@@ -100,12 +117,13 @@ function tagger.add_tag(tag)
   update_current(function(tags, song)
     local out, changed = tagset.add(tags, tag)
     if not out then
-      return nil, 'Not a usable tag name: ' .. tostring(changed)
+      return nil, msg('bad_tag', { error = tostring(changed) })
     end
+    local vars = { tag = tag, song = adapter.song_label(song) }
     if not changed then
-      return string.format('%q already set on %s', tag, adapter.song_label(song))
+      return msg('tag_already_set', vars)
     end
-    return string.format('Added tag %q to %s', tag, adapter.song_label(song))
+    return msg('tag_added', vars)
   end)
 end
 
@@ -114,12 +132,13 @@ function tagger.remove_tag(tag)
   update_current(function(tags, song)
     local out, changed = tagset.remove(tags, tag)
     if not out then
-      return nil, 'Not a usable tag name: ' .. tostring(changed)
+      return nil, msg('bad_tag', { error = tostring(changed) })
     end
+    local vars = { tag = tag, song = adapter.song_label(song) }
     if not changed then
-      return string.format('%q was not set on %s', tag, adapter.song_label(song))
+      return msg('tag_not_set', vars)
     end
-    return string.format('Removed tag %q from %s', tag, adapter.song_label(song))
+    return msg('tag_removed', vars)
   end)
 end
 
@@ -127,20 +146,21 @@ end
 function tagger.show_tags()
   local song = adapter.current_song()
   if not song then
-    problem('No current song is available.')
+    problem('no_song')
     return
   end
 
   local tags, st = read_tags(song.path)
   if not tags then
-    problem('Cannot read ' .. tagfile.FILENAME .. ': invalid file.', st.err)
+    problem('read_failed', { file = tagfile.FILENAME }, st.err)
     return
   end
 
   if #tags == 0 then
-    notify.info('No tags on ' .. adapter.song_label(song))
+    notify.info(i18n.t('no_tags', { song = adapter.song_label(song) }))
   else
-    notify.info('Tags: ' .. table.concat(tags, ', '))
+    -- the list goes in as canonical names; i18n renders the display ones
+    notify.info(i18n.t('tags_list', { tags = tags }))
   end
 end
 
@@ -173,13 +193,13 @@ end
 function tagger.open_menu()
   local song = adapter.current_song()
   if not song then
-    problem('No current song is available.')
+    problem('no_song')
     return
   end
 
   local current = read_tags(song.path)
   if not current then
-    problem('Cannot read ' .. tagfile.FILENAME .. ': invalid file.')
+    problem('read_failed', { file = tagfile.FILENAME })
     return
   end
 
@@ -261,18 +281,19 @@ local function draw_menu()
     return
   end
 
-  adapter.draw_text(20, 120, 22, 1, 1, 1, 1,
-    'Tags  (up/down, enter toggles, esc closes)')
+  adapter.draw_text(20, 120, 22, 1, 1, 1, 1, i18n.t('menu_title'))
 
   for i = 1, #menu.tags do
     local tag = menu.tags[i]
     local y = 120 + i * 24
     local mark = tagset.has(menu.current, tag) and '[x] ' or '[ ] '
+    -- translated for reading, canonical name kept alongside for grepping later
+    local label = i18n.tag_entry(tag)
 
     if i == menu.index then
-      adapter.draw_text(30, y, 20, 1, 0.85, 0.25, 1, '> ' .. mark .. tag)
+      adapter.draw_text(30, y, 20, 1, 0.85, 0.25, 1, '> ' .. mark .. label)
     else
-      adapter.draw_text(30, y, 20, 0.8, 0.8, 0.8, 1, '  ' .. mark .. tag)
+      adapter.draw_text(30, y, 20, 0.8, 0.8, 0.8, 1, '  ' .. mark .. label)
     end
   end
 end
@@ -313,9 +334,40 @@ function tagger.on_parse_input(_breakable, event)
   -- not ours: fall through so the song screen behaves normally
 end
 
+--- Re-reads the language if it has not been checked recently, so switching
+-- UltraStar's language takes effect without restarting the game.
+local function maybe_refresh_language()
+  if state.cfg.language ~= 'auto' then
+    return -- pinned; the game's setting is irrelevant
+  end
+
+  local now = adapter.time()
+  if state.language_checked_at and (now - state.language_checked_at) < LANGUAGE_RECHECK_MS then
+    return
+  end
+  state.language_checked_at = now
+
+  adapter.forget_game_language()
+  local found = adapter.game_language()
+  if found == state.game_language then
+    return
+  end
+
+  state.game_language = found
+  local chosen = i18n.set_language(i18n.resolve('auto', found))
+  adapter.log_info('language is now ' .. chosen .. ' (UltraStar reports '
+    .. tostring(found) .. ')')
+end
+
 --- ScreenSong.SongSelected. Shows the tags a song already carries.
 function tagger.on_song_selected()
-  if not state.ready or not state.cfg.show_existing_tags then
+  if not state.ready then
+    return
+  end
+
+  maybe_refresh_language()
+
+  if not state.cfg.show_existing_tags then
     return
   end
 
@@ -326,7 +378,7 @@ function tagger.on_song_selected()
 
   local tags = read_tags(song.path)
   if tags and #tags > 0 then
-    notify.info('Tags: ' .. table.concat(tags, ', '))
+    notify.info(i18n.t('tags_list', { tags = tags }))
   end
 end
 
@@ -391,11 +443,28 @@ function tagger.start()
     return false
   end
 
+  -- Follow the game before anything can produce a user-visible message. The
+  -- config may override this a few lines down, but it cannot be read yet.
+  state.game_language = adapter.game_language()
+  i18n.set_language(i18n.resolve('auto', state.game_language))
+
   state.cfg, state.unknown_cfg = load_config()
 
   if not state.cfg.enabled then
     adapter.log_info('disabled by configuration')
     return false
+  end
+
+  local chosen, why = i18n.resolve(state.cfg.language, state.game_language)
+  i18n.set_language(chosen)
+  state.language_checked_at = adapter.time()
+  if why == 'game' then
+    adapter.log_info('language ' .. chosen .. ', following UltraStar')
+  elseif why == 'pinned' then
+    adapter.log_info('language ' .. chosen .. ', pinned by configuration')
+  else
+    adapter.log_info('language ' .. chosen .. ' (UltraStar reports '
+      .. tostring(state.game_language) .. ', no catalogue for it)')
   end
 
   local bindings, problems = parse_bindings(state.cfg)
