@@ -37,11 +37,16 @@ They are useful to any plugin author, not just this one.
 | `Usdx.ScreenSong` module with `GetSelectedSong()` | new `src/lua/ULuaScreenSong.pas` |
 | `ScreenSong.ParseInput` hook, breakable | `src/screens/UScreenSong.pas` |
 | `ScreenSong.SongSelected` hook | `src/screens/UScreenSong.pas` |
-| `Usdx.GetUserPath()` | `src/lua/ULuaUsdx.pas` |
+| `Usdx.GetUserPath()`, two results | `src/lua/ULuaUsdx.pas` |
 | `Lua_PushIOPath()` | `src/lua/ULuaUtils.pas` |
 
 Both song getters return `Path`, `FileName`, `PathUTF8`, `FileNameUTF8`, `Artist` and
 `Title`, or nil when there is no song to describe.
+
+`Usdx.GetUserPath()` returns two values for the same reason those getters carry two spellings
+of each path: the first is in the encoding Lua's `io` library expects, the second is UTF-8 for
+display. On Windows they differ as soon as the path leaves the active code page, and using the
+wrong one means either a failed open or mojibake on screen.
 
 `ScreenSong.ParseInput` fires **after** the song menu and jump-to overlays have been
 offered the key, so a plugin cannot steal input from an open menu. It receives a table:

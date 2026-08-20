@@ -161,12 +161,23 @@ end
 -- misc host services
 --------------------------------------------------------------------------
 
---- The writable user directory, or nil.
+--- The writable user directory.
+-- Two values: the path in the encoding Lua's io library expects, and the same
+-- path as UTF-8 for showing to a human. On Windows those differ whenever the
+-- path leaves the active code page, and mixing them up means either a failed
+-- open or mojibake in the log.
+--
+-- A build predating that second return value gets the first one twice, which
+-- is correct there: it was UTF-8 for both purposes.
+-- @return io_path, display_path -- or nil
 function adapter.user_path()
   if M.usdx and type(M.usdx.GetUserPath) == 'function' then
-    local ok, path = pcall(M.usdx.GetUserPath)
+    local ok, path, path_utf8 = pcall(M.usdx.GetUserPath)
     if ok and type(path) == 'string' and path ~= '' then
-      return path
+      if type(path_utf8) ~= 'string' or path_utf8 == '' then
+        path_utf8 = path
+      end
+      return path, path_utf8
     end
   end
   return nil
@@ -175,13 +186,12 @@ end
 --- UltraStar's own config.ini, as text, or nil plus the paths that were tried.
 -- The language setting lives in it, and there is no Lua API for game settings.
 --
--- Windows has a wrinkle worth the second candidate. GetUserPath() hands back
--- UTF-8 (ULuaUsdx.pas pushes ToUTF8 directly instead of going through
--- Lua_PushIOPath), while Lua's io reaches the filesystem through the narrow C
--- runtime and wants the active code page. For an ASCII path the two agree; for
--- a profile name outside the code page they do not, and the open fails. APPDATA
--- comes from that same narrow runtime, so it is already in the encoding io
--- wants. See docs/i18n.md.
+-- The first candidate is the path GetUserPath reports for io, which is the
+-- right answer on a build that distinguishes the two encodings. The %APPDATA%
+-- retry covers an older build, where GetUserPath returned UTF-8 for both
+-- purposes and so could not be opened on Windows once the path left the active
+-- code page; APPDATA comes from the same narrow C runtime io uses, so it is
+-- already in the encoding io wants. See docs/i18n.md.
 function adapter.game_config_text()
   local join = require('tagger.tagfile').join
   local candidates = {}

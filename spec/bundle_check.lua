@@ -61,7 +61,12 @@ end
 local Usdx = {
   Version = function() return 'stub' end,
   Time = function() return host.now end,
-  GetUserPath = function() return host.user_path end,
+  -- two results, as the game does: the path io wants, then a UTF-8 spelling for
+  -- display. The second is deliberately unopenable, so a plugin that reaches for
+  -- the wrong one fails here instead of on someone's non-ASCII profile.
+  GetUserPath = function()
+    return host.user_path, 'DISPLAY-ONLY' .. host.user_path
+  end,
   ShutMeDown = function() end,
   Hook = function(event, func_name)
     -- mirrors ULuaCore: an unknown event is an error
@@ -200,6 +205,13 @@ if not chunk then
   os.exit(1)
 end
 chunk()
+
+test('the user path is taken from the first result, the one io can open', function()
+  local io_path, display = Usdx.GetUserPath()
+  is_true(io_path ~= display, 'the stub returns two different values')
+  is_true(io.open(display .. '/config.ini', 'rb') == nil,
+    'and the display one really is unopenable')
+end)
 
 test('the bundle exposes plugin_init', function()
   equal(type(_G.plugin_init), 'function')

@@ -396,7 +396,7 @@ end
 --------------------------------------------------------------------------
 
 local function load_config()
-  local dir = adapter.user_path()
+  local dir, dir_display = adapter.user_path()
   if not dir then
     adapter.log_warn('no user path available, using default settings')
     return config.defaults(), {}
@@ -405,8 +405,11 @@ local function load_config()
   local path = config.path_in(dir)
   local cfg, warnings, unknown = config.load(path)
 
+  -- the log gets the UTF-8 spelling: the path used for io is in the platform's
+  -- code page, which would arrive in the log as mojibake
+  local shown = config.path_in(dir_display or dir)
   for i = 1, #warnings do
-    adapter.log_warn(path .. ': ' .. warnings[i])
+    adapter.log_warn(shown .. ': ' .. warnings[i])
   end
 
   return cfg, unknown
