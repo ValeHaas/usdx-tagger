@@ -142,28 +142,6 @@ function tagger.remove_tag(tag)
   end)
 end
 
---- Shows the current song's tags.
-function tagger.show_tags()
-  local song = adapter.current_song()
-  if not song then
-    problem('no_song')
-    return
-  end
-
-  local tags, st = read_tags(song.path)
-  if not tags then
-    problem('read_failed', { file = tagfile.FILENAME }, st.err)
-    return
-  end
-
-  if #tags == 0 then
-    notify.info(i18n.t('no_tags', { song = adapter.song_label(song) }))
-  else
-    -- the list goes in as canonical names; i18n renders the display ones
-    notify.info(i18n.t('tags_list', { tags = tags }))
-  end
-end
-
 --------------------------------------------------------------------------
 -- the tag menu
 --------------------------------------------------------------------------
@@ -326,11 +304,6 @@ function tagger.on_parse_input(_breakable, event)
     return true
   end
 
-  if keys.matches(b.show_tags, event) then
-    tagger.show_tags()
-    return true
-  end
-
   -- not ours: fall through so the song screen behaves normally
 end
 
@@ -420,7 +393,6 @@ local function parse_bindings(cfg)
 
   local wanted = {
     tag_menu = cfg.tag_menu_key,
-    show_tags = cfg.show_tags_key,
   }
 
   for name, spec in pairs(wanted) do

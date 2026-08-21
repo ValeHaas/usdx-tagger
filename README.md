@@ -46,10 +46,9 @@ what has been dealt with and what has not.
 
 ![Existing tags listed under the selected song](docs/tag-preview.png)
 
-| Key      | Action                                  |
-|----------|-----------------------------------------|
-| `T`      | Open the tag menu                       |
-| `Ctrl+T` | Show the current song's tags            |
+| Key | Action             |
+|-----|--------------------|
+| `T` | Open the tag menu  |
 
 Tags are written to a `.usdx-user-tags.yaml` file next to the song, so they can be
 searched with `grep` or `find` even without the game running, e.g.

@@ -5,10 +5,9 @@ language, the tag file itself, and working with tags outside the game.
 
 ## Default key bindings
 
-| Key      | Action                                  |
-|----------|-----------------------------------------|
-| `T`      | Open the tag menu                       |
-| `Ctrl+T` | Show the current song's tags            |
+| Key | Action             |
+|-----|--------------------|
+| `T` | Open the tag menu  |
 
 In the menu: up/down to move, `Enter` to toggle the highlighted tag, `Esc` to close. A
 tag the song already carries is marked `[x]`, and toggling it removes it again, so one
@@ -28,7 +27,6 @@ executable's directory for a portable install.
 enabled=true
 quick_tag=bad
 tag_menu_key=T
-show_tags_key=Ctrl+T
 show_notifications=true
 show_existing_tags=true
 delete_empty_tag_file=true
@@ -43,7 +41,7 @@ keystroke away.
 `Italian`, `Dutch`, `Portuguese`, `Polish`, `Russian`, `Swedish`. A name with no translation
 is reported in the log instead of silently showing English.
 
-Key bindings accept modifiers: `T`, `Shift+T`, `Ctrl+T`, `Alt+F5`, and the named keys
+Key bindings accept modifiers: `T`, `Shift+T`, `Alt+F5`, and the named keys
 `Space`, `Escape`, `Return`, `Tab`, the arrows, and `F1`-`F12`.
 
 A missing file, a missing key, or a malformed value each fall back to the default and are

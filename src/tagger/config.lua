@@ -23,7 +23,6 @@ local SETTINGS = {
   { key = 'enabled',               default = true,     kind = 'boolean' },
   { key = 'quick_tag',             default = 'bad',    kind = 'tag' },
   { key = 'tag_menu_key',          default = 'T',      kind = 'key' },
-  { key = 'show_tags_key',         default = 'Ctrl+T', kind = 'key' },
   { key = 'show_notifications',    default = true,     kind = 'boolean' },
   { key = 'show_existing_tags',    default = true,     kind = 'boolean' },
   { key = 'delete_empty_tag_file', default = true,     kind = 'boolean' },
@@ -188,7 +187,7 @@ end
 local function serialize(cfg, unknown)
   local out = {
     '# usdx-tagger settings',
-    '# key bindings accept modifiers, for example: G, Shift+G, Ctrl+T',
+    '# key bindings accept modifiers, for example: G, Shift+G, Alt+F5',
     '# language is auto (follow UltraStar) or one of: '
       .. table.concat(require('tagger.i18n').languages(), ', '),
     '',

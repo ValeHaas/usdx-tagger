@@ -320,14 +320,12 @@ test('the menu key does not fire while shift is held', function()
   runner.rmdir(dir)
 end)
 
-test('ctrl+T shows the tags instead of opening the menu', function()
+test('ctrl+T is not bound to anything', function()
   local dir = runner.tmpdir('ctrlt')
   set_song(dir)
-  menu_toggle(0)
-  settle()
 
-  is_true(press(KEY_T, KMOD_LCTRL), 'consumed')
-  contains(screen(), 'Tags:', 'tags reported')
+  is_nil(press(KEY_T, KMOD_LCTRL), 'ctrl+T does nothing')
+  equal(runner.file_exists(tagfile_path(dir)), false, 'nothing written')
 
   runner.rmdir(dir)
 end)
