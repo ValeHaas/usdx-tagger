@@ -13,4 +13,4 @@
     - the generated bundle header
 ]]
 
-return '0.1.0'
+return '1.0.0'
