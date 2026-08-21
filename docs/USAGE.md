@@ -115,8 +115,8 @@ Notes on the format:
 - When the last tag is removed, the file is deleted by default (configurable), which
   keeps filesystem searches meaningful.
 
-Suggested starting tags: `bad`, `review`, `bad-audio`, `bad-video`, `bad-lyrics`,
-`bad-timing`, `duplicate`, `favorite`.
+Suggested starting tags: `good`, `duplicate`, `bad-audio`, `bad-video`, `bad-lyrics`,
+`bad-timing`, `bad-notes`, `bad`.
 
 ## Working with tags outside the game
 

@@ -36,8 +36,14 @@ config.SETTINGS = SETTINGS
 --- Tags offered in the tag menu, in order. Purely a convenience list: any tag
 -- name is accepted, and this list is not part of the file format.
 config.SUGGESTED_TAGS = {
-  'bad', 'review', 'bad-audio', 'bad-video',
-  'bad-lyrics', 'bad-timing', 'duplicate', 'favorite',
+  'good',
+  'duplicate',
+  'bad-audio',
+  'bad-video',
+  'bad-lyrics',
+  'bad-timing',
+  'bad-notes',
+  'bad',
 }
 
 --- A fresh table of defaults.

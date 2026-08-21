@@ -422,10 +422,9 @@ return function(t)
 
   test('a tag list is translated for the screen and canonical for the log', function()
     with_language('German', function()
-      local vars = { tags = { 'bad', 'review' } }
-      equal(i18n.t('tags_list', vars), 'Tags: schlecht, pr' ..
-        string.char(195, 188) .. 'fen')
-      equal(i18n.en('tags_list', vars), 'Tags: bad, review')
+      local vars = { tags = { 'bad', 'good' } }
+      equal(i18n.t('tags_list', vars), 'Tags: schlecht, gut')
+      equal(i18n.en('tags_list', vars), 'Tags: bad, good')
     end)
   end)
 

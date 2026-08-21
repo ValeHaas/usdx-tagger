@@ -276,11 +276,11 @@ test('two different entries give two tags, with no duplicate', function()
   set_song(dir)
 
   menu_toggle(0) -- bad
-  menu_toggle(1) -- review
+  menu_toggle(1) -- good
 
   local text = runner.read_file(tagfile_path(dir))
   contains(text, '- bad', 'first tag')
-  contains(text, '- review', 'second tag')
+  contains(text, '- good', 'second tag')
 
   local count = 0
   for _ in text:gmatch('%- bad') do count = count + 1 end
@@ -414,11 +414,11 @@ test('choosing a menu entry applies that tag', function()
   local dir = runner.tmpdir('menuchoose')
   set_song(dir)
 
-  menu_toggle(1) -- one step down from the quick tag selects "review"
+  menu_toggle(1) -- one step down from the quick tag selects "good"
 
   local text = runner.read_file(tagfile_path(dir))
   is_true(text ~= nil, 'tag file created')
-  contains(text, '- review', 'second entry applied')
+  contains(text, '- good', 'second entry applied')
 
   runner.rmdir(dir)
 end)
